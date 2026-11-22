@@ -950,7 +950,7 @@ class Girl {
   }
   face(t) { const lim = this.model.melee ? 1.7 : 1.15; this.aimTo = clamp(Math.atan2(t.x - this.x, t.z - this.z), -lim, lim); this.aimHold = 1.3; }
   take(dmg) {
-    if (!this.alive || this.inv > 0) return;
+    if (!this.alive || this.inv > 0 || this.game.tut) return;      // 튜토리얼 중에는 피해가 없다
     const g = this.game;
     dmg *= g.defMul() * (g.barrierT > 0 ? 0.4 : 1) * (this.inField ? FIELD_DEF : 1);
     this.sinceHit = 0; this.flash = 0.12;
@@ -987,6 +987,11 @@ class Girl {
     // 총을 든 소녀의 우선순위: 코앞까지 온 돌격형 → 멀리서 쏘는 적(근접으로는 못 잡는다) → 가장 가까운 적
     const list = this.enemiesWithin(rng);
     return list.find(e => e.kind === 'rusher' && (e.x - this.x) ** 2 + (e.z - this.z) ** 2 < 81) || list.find(e => e.spec.shot || (e.spec.ranged && e.kind !== 'boss')) || list[0] || null;
+  }
+  settle(dt) {      // 튜토리얼로 시간이 멈춘 동안: 끌어서 옮긴 자리로 미끄러져 가는 것만 한다
+    const dx = this.standX() - this.x, dz = this.standZ() - this.z, k = Math.min(1, dt * 15);
+    this.x += dx * k; this.z += dz * k;
+    this.moveCd = Math.max(0, this.moveCd - dt); this.boost = Math.max(0, this.boost - dt * 2.5);
   }
   update(dt) {
     const dx = this.standX() - this.x, dz = this.standZ() - this.z, k = Math.min(1, dt * 15);   // 빠르게 튀어나가 부드럽게 멈춘다
@@ -1260,7 +1265,7 @@ class Enemy {
         this.x += ((this.laneX ?? clamp(this.x, -14, 14)) - this.x) * Math.min(1, dt * 0.6);      // 자기 줄(소대 정면)로 모인다
       } else {
         this.atk -= dt;
-        if (this.atk <= 0 && tgt) {
+        if (this.atk <= 0 && tgt && !this.tutor) {
           if (S.shot) {               // 사격형: 가장 가까운 소녀에게 바로 맞는 총알 (작지만 꾸준한 피해)
             this.atk = S.atkCd * rand(0.85, 1.15); tgt.take(this.dmg); this.lunge = 0.1;
             g.tracer([this.x + 0.4, this.z + 1, 1.4], [tgt.x, tgt.z, 1.5], 0xff5a6a, 0.09, 0.1); g.sparks(tgt.x, tgt.z + 0.4, 1.4, 0xff7878, 3);
@@ -1341,6 +1346,36 @@ const el = { dist: $('dist'), zone: $('zone'), kills: $('kills'), autoDodge: $('
   skill: $('skill'), skillText: $('skillText'), overlay: $('overlay'), body: $('overlayBody'),
   viewBtn: $('viewBtn'), cards: $('cards'), topbar: $('topbar'), progLabel: $('progLabel'), progFill: $('progFill'), progText: $('progText'), plv: $('plv'), xpFill: $('xpFill'),
   lvBadge: $('lvBadge'), cutin: $('cutin'), lvup: $('lvup'), flash: $('flash'), hurt: $('hurt') };
+// 튜토리얼 화면 요소: 말풍선, 버튼을 감싸는 빛 테두리, 끄는 방향을 보여 주는 손가락(흰 점)
+const tutUI = (() => {
+  const css = document.createElement('style');
+  css.textContent = `
+#tut { position: fixed; inset: 0; pointer-events: none; z-index: 60; display: none; }
+#tut.on { display: block; }
+#tut .tbub { position: absolute; left: 50%; transform: translateX(-50%); top: 47%; width: min(80vw, 320px);
+  background: rgba(14, 18, 34, .93); border: 1.5px solid #ffdc5aaa; border-radius: 14px; padding: 11px 14px 6px; color: #f0f4ff;
+  font: 700 15px/1.5 system-ui, sans-serif; text-align: center; box-shadow: 0 8px 30px #0009; }
+#tut.low .tbub { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); }
+#tut .tbub p { margin: 0; } #tut .tbub p small { display: block; font-weight: 500; font-size: 12.5px; color: #b8c0dc; margin-top: 2px; }
+#tut .tbtns { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 6px; }
+#tut button { pointer-events: auto; border: 0; border-radius: 9px; font: 700 13px system-ui, sans-serif; padding: 7px 14px; cursor: pointer; }
+#tut .tok { background: #ffdc5a; color: #2a2008; display: none; } #tut.ask .tok { display: inline-block; }
+#tut .tskip { all: unset; pointer-events: auto; cursor: pointer; color: #8a94b4; padding: 4px 8px; font: 500 12px system-ui, sans-serif; text-decoration: underline; }
+#tut .tring { position: absolute; border: 3px solid #ffdc5a; border-radius: 14px; box-shadow: 0 0 0 4px #ffdc5a40, 0 0 20px #ffdc5a; display: none; animation: tutPulse 1s ease-in-out infinite; }
+@keyframes tutPulse { 50% { transform: scale(1.07); opacity: .55; } }
+#tut .tdot { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255, 255, 255, .92);
+  box-shadow: 0 0 0 7px rgba(255, 255, 255, .3), 0 4px 14px #0009; display: none; }
+#tut .tline { position: absolute; height: 8px; margin-top: -4px; border-radius: 4px; transform-origin: 0 50%; display: none;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .6)); }`;
+  document.head.appendChild(css);
+  const root = document.createElement('div');
+  root.id = 'tut';
+  root.innerHTML = `<div class="tbub"><p></p><div class="tbtns"><button class="tok">알겠어요</button><button class="tskip">튜토리얼 건너뛰기</button></div></div>`
+    + '<i class="tring"></i>'.repeat(2) + '<i class="tline"></i><i class="tdot"></i>'.repeat(2);
+  document.body.appendChild(root);
+  return { root, msg: root.querySelector('.tbub p'), ok: root.querySelector('.tok'), skip: root.querySelector('.tskip'),
+    rings: [...root.querySelectorAll('.tring')], dots: [...root.querySelectorAll('.tdot')], lines: [...root.querySelectorAll('.tline')] };
+})();
 const replay = e => { e.classList.remove('go'); void e.offsetWidth; e.classList.add('go'); };      // CSS 연출을 처음부터 다시 튼다
 
 class Game {
@@ -1361,7 +1396,7 @@ class Game {
     this.xp = sv && sv.xp > 0 ? +sv.xp : 0;
     this.up = Object.fromEntries(Object.keys(UPS).map(k => [k, Math.min(this.plv, num(sv && sv.up, k))]));
     this.wlv = Object.fromEntries(Object.keys(LINES).map(k => [k, Math.min(this.plv, num(sv && sv.wlv, k))]));
-    this.scroll = 0; this.kills = 0; this.autoDodge = !!(sv && sv.autoDodge); this.autoSkill = !!(sv && sv.autoSkill); this.playerShells = [];      // 자동 회피·자동 스킬은 따로 켜고 끈다. 둘 다 꺼진 채로 시작하고, 켜 두면 기억한다
+    this.scroll = 0; this.kills = 0; this.autoDodge = !!(sv && sv.autoDodge); this.autoSkill = !!(sv && sv.autoSkill); this.playerShells = []; this.tutDone = !!(sv && sv.tutDone); this.tut = null; this.tutFreeze = false;      // 자동 회피·자동 스킬은 따로 켜고 끈다. 둘 다 꺼진 채로 시작하고, 켜 두면 기억한다
     this.adv = SCROLL; this.walk = 1; this.walkPh = 0; this.fightT = 0; this.dashT = 0; this.mode = 'run';     // 소대의 전진 속도와 걸음
     this.boostFx = 0; this.hitstop = 0; this.stopCd = 0; this.odT = 0; this.barrierT = 0;
     this.restartStage(this.stage);
@@ -1369,7 +1404,7 @@ class Game {
   }
   save() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, loadout: this.loadout, cleared: this.cleared, stage: this.stage,
-      parts: this.parts, plv: this.plv, xp: this.xp, up: this.up, wlv: this.wlv, autoDodge: this.autoDodge, autoSkill: this.autoSkill })); } catch (e) { /* 무시 */ }
+      parts: this.parts, plv: this.plv, xp: this.xp, up: this.up, wlv: this.wlv, autoDodge: this.autoDodge, autoSkill: this.autoSkill, tutDone: !!this.tutDone })); } catch (e) { /* 무시 */ }
   }
   // ---- 성장 수치 (전부 여기서 계산한다)
   weaponId(line) { const lv = this.wlv[line]; return LINES[line].forms[lv >= EVOLVE2_LV ? 2 : lv >= EVOLVE_LV ? 1 : 0]; }     // 계열 레벨 10, 30에서 진화한 형태
@@ -1583,9 +1618,16 @@ class Game {
     const warned = this.warnedSet();
     for (const [a, b] of cells) warned.add(a + ',' + b);
     for (const g of alive) if (warned.has(g.col + ',' + g.row) && !this.escapeStep(g, warned, depth)) return false;
-    const gid = this.gidN = (this.gidN || 0) + 1, single = type === 'cell' || type === 'pair', color = PAT_COLOR[type];
+    this.spawnShells(enemy, cells, type, dur);
+    enemy.patI++;
+    this.sfx('warn');
+    return true;
+  }
+  // 예고 원(과 한 칸짜리면 날아오는 포탄)을 깐다. 판정은 칸 단위, 화면의 원은 그 칸에 선 소녀를 겨눈다.
+  spawnShells(enemy, cells, type, dur) {
+    const gid = this.gidN = (this.gidN || 0) + 1, single = type === 'cell' || type === 'pair', color = PAT_COLOR[type], out = [];
     cells.forEach(([a, b], i) => {
-      const mine = a === c && b === r;
+      const who = this.girlInCell(a, b);
       const disc = new THREE.Mesh(discGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, depthWrite: false, fog: false }));
       const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
       const rad = single ? SHELL_RADIUS : 1.42;
@@ -1593,12 +1635,11 @@ class Game {
       const ball = single ? part(GEO.ico0, MAT.flame, 0.3, 0.3, 0.3) : null;     // 한 칸짜리는 포탄이 날아오는 것이 보인다
       scene.add(disc, ring); if (ball) scene.add(ball);
       // 판정은 칸 단위지만, 화면에는 그 자리를 겨눈 원으로 보인다
-      this.shells.push({ type, gid, first: i === 0, x0: enemy.x, z0: enemy.z, col: a, row: b, tx: mine ? tgt.standX() : COL_X[a], tz: mine ? tgt.standZ() : ROW_Z[b],
-        dmg: enemy.dmg * PATTERN_MUL, had: this.girlInCell(a, b), t: 0, dur, rad, ball, disc, ring });
+      const sh = { type, gid, first: i === 0, x0: enemy.x, z0: enemy.z, col: a, row: b, tx: who ? who.standX() : COL_X[a], tz: who ? who.standZ() : ROW_Z[b],
+        dmg: (enemy.dmg || 0) * PATTERN_MUL, had: who, t: 0, dur, rad, ball, disc, ring };
+      this.shells.push(sh); out.push(sh);
     });
-    enemy.patI++;
-    this.sfx('warn');
-    return true;
+    return out;
   }
   dropShell(s) { scene.remove(s.disc, s.ring); if (s.ball) scene.remove(s.ball); s.disc.material.dispose(); s.ring.material.dispose(); }
 
@@ -1802,7 +1843,165 @@ class Game {
     }
     this.hint = [...this.drags.values()].map(o => o.hint).find(Boolean) || null;
   }
-  start() { this.state = 'play'; this.showOverlay(); }
+  // ---- 튜토리얼 (처음 출격할 때 한 번. 일시정지 화면에서 다시 볼 수 있다)
+  //  ① 지켜보기 → ② 포격 적: 아래로 끌어 피하기 → ③ 세로줄: 옆으로 → ④ 두 명 동시에 → ⑤ 정비(무기·힐러·강화) → ⑥ 자동 버튼 안내
+  //  피할 차례가 오면 시간이 멈추고 손가락이 끄는 방향을 보여 준다. 진행 중에는 맞아도 피해가 없다.
+  tutBegin() {
+    this.tutClear();
+    this.tut = { step: 'intro', t: 0, msg: '', targets: [], drill: null, n: 0 };
+    this.tutFreeze = false;
+    tutUI.root.classList.add('on');
+  }
+  tutClear() {      // 튜토리얼이 깔아 둔 것(포격 적, 예고)을 치운다
+    for (const e of this.enemies) if (e.tutor) { e.tutor = false; e.alive = false; }
+    for (const s of this.shells) if (s.tut) this.dropShell(s);
+    this.shells = this.shells.filter(s => !s.tut);
+  }
+  tutEnd(done) {
+    this.tutClear();
+    this.tut = null; this.tutFreeze = false;
+    tutUI.root.className = '';
+    this.tutDone = true; this.save();
+    if (done) { this.say('튜토리얼 완료!', 2.6); this.sfx('clear'); }
+  }
+  tutGo(step) { this.tut.step = step; this.tut.t = 0; this.tut.started = false; }
+  // 피하기 연습 하나를 시작한다. n: 0 아래로, 1 옆으로, 2 두 명 동시에. 지금 자리에서 할 수 없으면 false
+  tutDrill(n) {
+    const al = this.aliveGirls(), inb = (c, r) => c >= 0 && c < COLS && r >= 0 && r < ROWS, free = (c, r) => inb(c, r) && !this.girlInCell(c, r);
+    let girls = [], dests = [], cells = [], type = 'cell', msg = '';
+    if (n === 0) {
+      const g = al.find(o => free(o.col, o.row + 1));
+      if (!g) return false;
+      girls = [g]; dests = [[g.col, g.row + 1]]; type = 'cross';
+      cells = [[g.col, g.row], [g.col - 1, g.row], [g.col + 1, g.row], [g.col, g.row - 1]].filter(([c, r]) => inb(c, r) && !this.girlInCell(c, r) || (c === g.col && r === g.row));
+      msg = '소녀를 <b>아래로</b> 끌어서 피하세요!<small>손가락으로 소녀를 누른 채 아래로 쓱</small>';
+    } else if (n === 1) {
+      for (const g of al) {
+        if (al.some(o => o !== g && o.col === g.col)) continue;
+        const side = [1, -1].find(sd => free(g.col + sd, g.row));
+        if (side == null) continue;
+        girls = [g]; dests = [[g.col + side, g.row]]; break;
+      }
+      if (!girls.length) return false;
+      type = 'col'; cells = Array.from({ length: ROWS }, (_, r) => [girls[0].col, r]);
+      msg = '세로 한 줄이 위험해요! <b>옆으로</b> 끌어서 피하세요';
+    } else {
+      const taken = new Set();
+      for (const g of al) {
+        if (girls.length >= 2) break;
+        const d = [[0, 1], [1, 0], [-1, 0], [0, -1]].map(([dc, dr]) => [g.col + dc, g.row + dr]).find(([c, r]) => free(c, r) && !taken.has(c + ',' + r));
+        if (!d) continue;
+        taken.add(d[0] + ',' + d[1]); girls.push(g); dests.push(d);
+      }
+      if (girls.length < 2) return false;
+      cells = girls.map(g => [g.col, g.row]);
+      msg = '두 명이 동시에 위험해요! <b>두 손가락</b>으로 함께 끌어 보세요<small>하나씩 끌어도 괜찮아요</small>';
+    }
+    const art = this.enemies.find(e => e.tutor && e.alive) || { x: 0, z: 40, dmg: 0 };
+    const id = (this.tutN = (this.tutN || 0) + 1);
+    for (const s of this.spawnShells(art, cells, type, 2.4)) s.tut = id;
+    this.sfx('warn');
+    this.tut.drill = { n, id, girls, dests, msg, frozen: false, after: 0 };
+    return true;
+  }
+  tutSafe(D) { return D.girls.every(g => !g.alive || !this.shells.some(s => s.tut === D.id && s.col === g.col && s.row === g.row)); }
+  tutTick(dt) {
+    const T = this.tut, play = this.state === 'play', shop = this.state === 'shop';
+    T.t += dt; T.targets = []; T.ask = false; T.low = false;
+    const q = sel => document.querySelector(sel);
+    switch (T.step) {
+      case 'intro':
+        T.msg = '소녀들은 <b>알아서</b> 싸워요<small>잠깐 지켜보세요</small>';
+        if (T.t > 4.5) {
+          const e = new Enemy(this, 'art', 0, 46); e.tutor = true; e.laneX = 0; this.enemies.push(e);
+          this.tutGo('art');
+        }
+        break;
+      case 'art':
+        T.msg = '<b>포격 적</b>이 나타났어요!<small>포탄이 떨어질 자리는 바닥에 표시돼요</small>';
+        if (T.t > 2.6) { T.n = 0; this.tutGo('drill'); }
+        break;
+      case 'drill': {
+        if (!T.drill) {
+          while (T.n < 3 && !this.tutDrill(T.n)) T.n++;     // 지금 자리로는 할 수 없는 연습은 건너뛴다
+          if (T.n >= 3) { this.tutGo('praise'); break; }
+          T.t = 0;
+        }
+        const D = T.drill, safe = this.tutSafe(D);
+        if (!D.frozen && !safe && T.t > 0.45) { D.frozen = true; this.tutFreeze = true; }
+        if (this.tutFreeze && safe) this.tutFreeze = false;
+        T.msg = safe ? '<b>회피 성공!</b>' : D.msg;
+        if (!this.shells.some(s => s.tut === D.id)) {          // 포탄이 떨어졌다
+          D.after += dt;
+          if (D.after > 1.1) { T.drill = null; T.n++; if (T.n >= 3) this.tutGo('praise'); }
+        }
+        break;
+      }
+      case 'praise':
+        T.msg = '잘했어요! 이번엔 <b>정비</b>를 해 볼게요';
+        if (T.t > 1.8) { this.tutClear(); this.parts = Math.max(this.parts, upCost(0) + 20); this.tutGo('shopBtn'); }
+        break;
+      case 'shopBtn':
+        if (shop) { T.orig = this.loadout.map(x => x.line).join(); this.tutGo('sel'); break; }
+        this.tutFreeze = play;
+        T.msg = '오른쪽 위 <b>정비</b> 버튼을 눌러 보세요'; T.targets = ['#shopBtn'];
+        break;
+      case 'sel': case 'line': case 'heal': case 'up': case 'go': {
+        if (!shop) { if (play) { this.tutGo('auto'); this.tutFreeze = true; } break; }
+        const d = this.draft;
+        if (T.step === 'sel' && this.shopSel != null) this.tutGo('line');
+        if (T.step === 'line' && d.map(x => x.line).join() !== T.orig) this.tutGo(d.some(x => x.line === 'heal') ? 'up' : 'heal');
+        if (T.step === 'heal' && d.some(x => x.line === 'heal')) this.tutGo('up');
+        if (T.step === 'up' && this.shopBought) this.tutGo('go');
+        T.low = true;
+        if (T.step === 'sel') { T.msg = '소녀 <b>카드</b>를 눌러 보세요'; T.targets = ['.scard']; }
+        else if (T.step === 'line') { T.msg = '<b>무기</b>를 바꿔 보세요<small>무기마다 싸우는 방식이 달라요</small>'; T.targets = ['.lines']; }
+        else if (T.step === 'heal') {
+          T.msg = '<b>힐러</b>도 한 명 두면 든든해요<small>\'수리 장치\'를 고르면 이웃한 아군을 고쳐요</small>';
+          T.targets = [this.shopSel != null ? '.lopt[data-val="heal"]' : '.squad'];
+        } else if (T.step === 'up') {
+          T.msg = '모은 부품으로 <b>강화</b>도 해 봐요<small>부대 전체가 세져요</small>'; T.targets = ['.buy[data-act="up"]:not([disabled])'];
+          if (!T.started) { T.started = true; const b = q(T.targets[0]); if (b) b.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        } else { T.msg = '준비 끝! <b>출격</b>을 눌러요'; T.targets = ['[data-act="go"]']; }
+        break;
+      }
+      case 'auto':
+        if (shop) break;
+        this.tutFreeze = play;
+        T.msg = '어렵다면 <b>자동 회피</b>와 <b>자동 스킬</b>을 켜 보세요<small>언제든 다시 끌 수 있어요</small>';
+        T.targets = ['#autoDodge', '#autoSkill']; T.ask = true;
+        break;
+    }
+  }
+  tutDraw() {
+    const T = this.tut, U = tutUI;
+    const show = T && (this.state === 'play' || this.state === 'shop');
+    U.root.classList.toggle('on', !!show);
+    if (!show) return;
+    U.root.classList.toggle('low', !!T.low); U.root.classList.toggle('ask', !!T.ask);
+    if (U.msg.dataset.m !== T.msg) { U.msg.innerHTML = T.msg; U.msg.dataset.m = T.msg; }
+    U.rings.forEach((r, i) => {
+      const e = T.targets[i] && document.querySelector(T.targets[i]), b = e && e.getBoundingClientRect();
+      if (!b || !b.width) { r.style.display = 'none'; return; }
+      Object.assign(r.style, { display: 'block', left: b.left - 6 + 'px', top: b.top - 6 + 'px', width: b.width + 12 + 'px', height: b.height + 12 + 'px' });
+    });
+    // 손가락: 위험한 소녀에서 피할 칸까지 반복해서 끌어 보인다
+    const D = T.step === 'drill' && T.drill, ph = (this.clock % 1.35) / 1.35;
+    U.dots.forEach((dot, i) => {
+      const line = U.lines[i], g = D && D.frozen && D.girls[i], dest = g && D.dests[i];
+      const danger = g && g.alive && this.shells.some(s => s.tut === D.id && s.col === g.col && s.row === g.row);
+      const a = danger && toScreen(g.x, g.z, 0.9), b0 = danger && toScreen(COL_X[dest[0]] + g.ox, ROW_Z[dest[1]] + g.oz, 0.9);
+      const b = b0 && [a[0] + (b0[0] - a[0]) * 1.5, a[1] + (b0[1] - a[1]) * 1.5];      // 화면에서 칸 사이가 짧아서 조금 더 길게 끌어 보인다
+      if (!a || !b) { dot.style.display = line.style.display = 'none'; return; }
+      const p = clamp((ph - 0.12) / 0.55, 0, 1), e = p * p * (3 - 2 * p), x = a[0] + (b[0] - a[0]) * e, y = a[1] + (b[1] - a[1]) * e;
+      const op = ph < 0.1 ? ph / 0.1 : ph > 0.82 ? Math.max(0, 1 - (ph - 0.82) / 0.15) : 1;
+      Object.assign(dot.style, { display: 'block', left: x + 'px', top: y + 'px', opacity: op, transform: `scale(${ph < 0.12 ? 0.8 : 1})` });
+      const len = Math.hypot(x - a[0], y - a[1]);
+      Object.assign(line.style, { display: len > 4 ? 'block' : 'none', left: a[0] + 'px', top: a[1] + 'px', width: len + 'px', opacity: op * 0.9,
+        transform: `rotate(${Math.atan2(y - a[1], x - a[0])}rad)` });
+    });
+  }
+  start() { this.state = 'play'; this.showOverlay(); if (!this.tutDone) this.tutBegin(); }
   nextView() {
     this.viewIdx = (this.viewIdx + 1) % VIEWS.length;
     el.viewBtn.lastElementChild.textContent = VIEWS[this.viewIdx].name;
@@ -1863,6 +2062,7 @@ class Game {
   act(d) {
     const a = d.act;
     if (a === 'resume') { this.state = 'play'; }
+    else if (a === 'tut') { this.state = 'play'; this.tutBegin(); }
     else if (a === 'retry') { this.restartStage(this.stage); this.state = 'play'; }
     else if (a === 'shop') { this.openShop(); return; }
     else if (a === 'sel') { this.shopSel = this.shopSel === +d.slot ? null : +d.slot; }
@@ -1952,6 +2152,12 @@ class Game {
     this.adv = this.adv > want ? Math.max(want, this.adv - 12 * dt) : Math.min(want, this.adv + 6 * dt);
   }
   update(dt) {
+    if (this.tutFreeze) {      // 튜토리얼: 시간을 멈추고 끌기만 받는다
+      this.adv = 0;
+      for (const g of this.girls) if (g.alive) g.settle(dt);
+      this.processDrags();
+      return;
+    }
     this.time += dt;
     this.odT = Math.max(0, this.odT - dt); this.barrierT = Math.max(0, this.barrierT - dt); this.stopCd = Math.max(0, this.stopCd - dt);
     this.updateAdvance(dt);
@@ -2014,7 +2220,7 @@ class Game {
     for (const e of this.enemies) if (!e.alive) e.dispose();
     this.enemies = this.enemies.filter(e => e.alive);
     if (this.focus && !this.focus.alive) this.focus = null;
-    if (this.autoDodge || this.autoSkill) this.autoAssist(dt);
+    if ((this.autoDodge || this.autoSkill) && !this.tut) this.autoAssist(dt);      // 튜토리얼 중에는 직접 해 보게 자동 보조를 쉰다
     this.processDrags();
     if (!this.aliveGirls().length) { this.state = 'over'; this.sfx('over'); this.showOverlay(); return; }      // 네 명이 동시에 쓰러져 있으면 패배
     // 스테이지 클리어: 보통은 정해진 거리를 전진하면, 보스 스테이지는 보스를 쓰러뜨리면. 멈추지 않고 다음으로 이어진다.
@@ -2312,7 +2518,7 @@ class Game {
     o.classList.toggle('shop', this.state === 'shop');
     document.body.classList.toggle('inshop', this.state === 'shop');
     if (this.state === 'start') {
-      el.body.innerHTML = `<h1>메카닉 미소녀</h1><h2>오픈 베타 v0.34-b1</h2>
+      el.body.innerHTML = `<h1>메카닉 미소녀</h1><h2>오픈 베타 v0.34-b2</h2>
         <p>몰려드는 적을 쓸어버리며 달립니다. 공격은 자동, 스테이지는 멈추지 않고 이어집니다.</p><p>&nbsp;</p>
         <p><b>소녀를 끌기</b> — 끄는 방향으로 한 칸 이동. 발밑의 예고는 꼭 피하세요 (맞으면 체력이 절반 넘게 날아갑니다)</p>
         <p><b>소녀 누르기</b> — 발밑이 빛나면 그 소녀의 스킬 (왼쪽 위 카드를 눌러도 됩니다)</p>
@@ -2322,7 +2528,8 @@ class Game {
         <p class="go">화면을 눌러 출격</p>`;
     } else if (this.state === 'paused') {
       el.body.innerHTML = `<h1 class="white">일시정지</h1>
-        <div class="ovbtns"><button class="primary" data-act="resume">계속 진행</button><button data-act="shop">정비</button></div>`;
+        <div class="ovbtns"><button class="primary" data-act="resume">계속 진행</button><button data-act="shop">정비</button></div>
+        <div class="ovbtns"><button data-act="tut">튜토리얼 다시 보기</button></div>`;
     } else if (this.state === 'shop') {
       const old = el.body.querySelector('.sbody'), keep = old ? old.scrollTop : 0;      // 다시 그려도 스크롤 위치는 유지
       el.body.innerHTML = this.shopHtml();
@@ -2341,7 +2548,9 @@ class Game {
     if (this.state === 'play') this.update(sim);
     else if (this.state === 'start') { this.adv = SCROLL; this.scroll += SCROLL * dt; }
     this.updateFx(this.state === 'play' ? sim : dt, this.state === 'play');
+    if (this.tut) this.tutTick(this.state === 'play' && !this.tutFreeze ? sim : 0);
     this.render(dt);
+    this.tutDraw();
   }
 }
 
@@ -2369,6 +2578,8 @@ el.autoDodge.addEventListener('click', () => { game.autoDodge = !game.autoDodge;
 el.autoSkill.addEventListener('click', () => { game.autoSkill = !game.autoSkill; game.save(); });
 $('pauseBtn').addEventListener('click', () => { if (game.state === 'play') { game.state = 'paused'; game.showOverlay(); } });
 $('shopBtn').addEventListener('click', () => { if (game.state === 'play') game.openShop(); });
+tutUI.skip.addEventListener('click', () => { if (game.tut) game.tutEnd(false); });
+tutUI.ok.addEventListener('click', () => { if (game.tut) game.tutEnd(true); });
 el.body.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) game.act(b.dataset); });
 window.addEventListener('keydown', e => {
   const k = e.code;
