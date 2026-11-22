@@ -1,4 +1,4 @@
-// 메카닉 미소녀 (가제) — 3D 전투 프로토타입 v0.12
+// 스틸 라인 (STEEL LINE) — 3D 전투 프로토타입
 // 둥근 행성 위를 무한 전진하며 지평선에서 다가오는 적을 격추한다. 기본은 전부 자동 전투.
 // 게임 규칙은 부대 기준 평면 좌표 (x: 좌우, z: 앞쪽 거리)로 계산하고, 그릴 때만 구면 위에 올린다.
 import * as THREE from './lib/three.module.min.js';
@@ -2518,7 +2518,7 @@ class Game {
     o.classList.toggle('shop', this.state === 'shop');
     document.body.classList.toggle('inshop', this.state === 'shop');
     if (this.state === 'start') {
-      el.body.innerHTML = `<h1>메카닉 미소녀</h1><h2>오픈 베타 v0.34-b2</h2>
+      el.body.innerHTML = `<h1>스틸 라인</h1><h2>오픈 베타 v0.34-b3</h2>
         <p>몰려드는 적을 쓸어버리며 달립니다. 공격은 자동, 스테이지는 멈추지 않고 이어집니다.</p><p>&nbsp;</p>
         <p><b>소녀를 끌기</b> — 끄는 방향으로 한 칸 이동. 발밑의 예고는 꼭 피하세요 (맞으면 체력이 절반 넘게 날아갑니다)</p>
         <p><b>소녀 누르기</b> — 발밑이 빛나면 그 소녀의 스킬 (왼쪽 위 카드를 눌러도 됩니다)</p>

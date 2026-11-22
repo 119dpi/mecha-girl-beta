@@ -1,7 +1,7 @@
 // 오픈 베타 묶음에만 들어가는 파일 (build_itch.py 가 index.html 에 붙인다. 개발 화면에는 없음).
 //  - 왼쪽 아래 구석에 작은 버전 표시
 //  - 처음 들어온 사람에게 한 번만 안내창 (닫을 때까지 게임을 멈춘다)
-const VERSION = 'v0.34-b2';            // build_itch.py 가 바꿔 넣는다
+const VERSION = 'v0.34-b3';            // build_itch.py 가 바꿔 넣는다
 const SEEN = 'mecha_girl_beta_seen';
 const game = window.__game;
 
