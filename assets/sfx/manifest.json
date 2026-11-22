@@ -1,0 +1,4 @@
+{
+  "_설명": "효과음 파일을 이 폴더에 넣고 아래에 '이름': '파일명' 으로 적으면 게임에서 바로 납니다. 한 이름에 여러 파일을 배열로 적으면 번갈아 납니다. 비어 있으면 소리가 없습니다.",
+  "_이름": "slash saber shot shotgun flame crit kill boom warn move dash skill burst level clear down revive over buy"
+}
