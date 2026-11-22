@@ -1373,7 +1373,7 @@ const tutUI = (() => {
   root.innerHTML = `<div class="tbub"><p></p><div class="tbtns"><button class="tok">알겠어요</button><button class="tskip">튜토리얼 건너뛰기</button></div></div>`
     + '<i class="tring"></i>'.repeat(2) + '<i class="tline"></i><i class="tdot"></i>'.repeat(2);
   document.body.appendChild(root);
-  return { root, msg: root.querySelector('.tbub p'), ok: root.querySelector('.tok'), skip: root.querySelector('.tskip'),
+  return { root, bub: root.querySelector('.tbub'), msg: root.querySelector('.tbub p'), ok: root.querySelector('.tok'), skip: root.querySelector('.tskip'),
     rings: [...root.querySelectorAll('.tring')], dots: [...root.querySelectorAll('.tdot')], lines: [...root.querySelectorAll('.tline')] };
 })();
 const replay = e => { e.classList.remove('go'); void e.offsetWidth; e.classList.add('go'); };      // CSS 연출을 처음부터 다시 튼다
@@ -1955,7 +1955,10 @@ class Game {
         if (T.step === 'up' && this.shopBought) this.tutGo('go');
         T.low = true;
         if (T.step === 'sel') { T.msg = '소녀 <b>카드</b>를 눌러 보세요'; T.targets = ['.scard']; }
-        else if (T.step === 'line') { T.msg = '<b>무기</b>를 바꿔 보세요<small>무기마다 싸우는 방식이 달라요</small>'; T.targets = ['.lines']; }
+        else if (T.step === 'line') {
+          T.msg = '<b>무기</b>를 바꿔 보세요<small>무기마다 싸우는 방식이 달라요</small>'; T.targets = ['.lines'];
+          if (!T.scLine) { const b = q('.lines'); if (b) { T.scLine = true; b.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }   // 낮은 화면(PC)에서는 무기 줄이 아래 막대에 가린다
+        }
         else if (T.step === 'heal') {
           T.msg = '<b>힐러</b>도 한 명 두면 든든해요<small>\'수리 장치\'를 고르면 이웃한 아군을 고쳐요</small>';
           T.targets = [this.shopSel != null ? '.lopt[data-val="heal"]' : '.squad'];
@@ -1980,6 +1983,29 @@ class Game {
     if (!show) return;
     U.root.classList.toggle('low', !!T.low); U.root.classList.toggle('ask', !!T.ask);
     if (U.msg.dataset.m !== T.msg) { U.msg.innerHTML = T.msg; U.msg.dataset.m = T.msg; }
+    // 싸우는 동안에는 말풍선이 소녀들과 예고 칸을 가리지 않게 판 바로 위(자리가 없으면 아래)에 둔다.
+    // 화면 비율에 따라 판의 위치가 달라서(PC 가로 화면은 판이 가운데) 고정 위치로는 겹친다.
+    let top = '';
+    if (this.state === 'play' && !T.low) {
+      const ys = [];
+      for (const x of [COL_X[0], COL_X[COLS - 1]]) for (const z of [ROW_Z[0] + 1.8, ROW_Z[ROWS - 1] - 1.8]) { const p = toScreen(x, z, 0); if (p) ys.push(p[1]); }
+      for (const g of this.girls) if (g.alive) for (const h of [4.4, -0.3]) { const p = toScreen(g.x, g.z, h); if (p) ys.push(p[1]); }
+      if (ys.length) {
+        const hi = Math.min(...ys), lo = Math.max(...ys), bh = U.bub.offsetHeight, gap = 14;
+        const ceil = (document.getElementById('topbar')?.getBoundingClientRect().bottom || 0) + 8, floor = innerHeight - 70;
+        if (hi - gap - bh >= ceil) top = hi - gap - bh + 'px';
+        else if (lo + gap + bh <= floor) top = lo + gap + 'px';
+      }
+    }
+    // 정비 화면: 넓은 화면(PC)에서는 정비판이 왼쪽에만 있으니 오른쪽 빈 곳 가운데에 둔다 (버튼을 가리지 않게)
+    let left = '';
+    if (this.state === 'shop') {
+      const pb = document.getElementById('overlayBody').getBoundingClientRect(), room = innerWidth - pb.right;
+      if (room >= U.bub.offsetWidth + 40) { left = pb.right + room / 2 + 'px'; top = '45%'; }
+    }
+    if (U.bub.style.top !== top) U.bub.style.top = top;
+    if (U.bub.style.left !== left) U.bub.style.left = left;
+    const bot = left ? 'auto' : ''; if (U.bub.style.bottom !== bot) U.bub.style.bottom = bot;
     U.rings.forEach((r, i) => {
       const e = T.targets[i] && document.querySelector(T.targets[i]), b = e && e.getBoundingClientRect();
       if (!b || !b.width) { r.style.display = 'none'; return; }
@@ -2518,7 +2544,7 @@ class Game {
     o.classList.toggle('shop', this.state === 'shop');
     document.body.classList.toggle('inshop', this.state === 'shop');
     if (this.state === 'start') {
-      el.body.innerHTML = `<h1>스틸 라인</h1><h2>오픈 베타 v0.34-b4</h2>
+      el.body.innerHTML = `<h1>스틸 라인</h1><h2>오픈 베타 v0.34-b5</h2>
         <p>몰려드는 적을 쓸어버리며 달립니다. 공격은 자동, 스테이지는 멈추지 않고 이어집니다.</p><p>&nbsp;</p>
         <p><b>소녀를 끌기</b> — 끄는 방향으로 한 칸 이동. 발밑의 예고는 꼭 피하세요 (맞으면 체력이 절반 넘게 날아갑니다)</p>
         <p><b>소녀 누르기</b> — 발밑이 빛나면 그 소녀의 스킬 (왼쪽 위 카드를 눌러도 됩니다)</p>
